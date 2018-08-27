@@ -82,6 +82,12 @@ class Transf(NoInvTransf):
         return X
 
 
+class TransfFeatureNames(Transf):
+
+    def get_feature_names(self):
+        return ['first_column', 'second_column']
+
+
 class TransfFitParams(Transf):
 
     def fit(self, X, y, **fit_params):
@@ -109,6 +115,10 @@ class Mult(BaseEstimator):
 
     def score(self, X, y=None):
         return np.sum(X)
+
+    def get_feature_names(self, input_features):
+        return ["({}) times {}".format(feature_name, self.mult)
+                for feature_name in input_features]
 
 
 class FitParamT(BaseEstimator):
@@ -1015,3 +1025,33 @@ def test_make_pipeline_memory():
     assert_true(pipeline.memory is None)
 
     shutil.rmtree(cachedir)
+
+
+def test_pipeline_features_names():
+    pipeline = make_pipeline(Mult(1), Mult(2))
+    assert_array_equal(pipeline.get_feature_names(['feature']),
+                       ['((feature) times 1) times 2'])
+
+
+def test_pipeline_features_names_suffix():
+    pipeline = make_pipeline(DummyTransf(), TransfFeatureNames(), Mult(2))
+    assert_array_equal(pipeline.get_feature_names(['test', 'test2']),
+                       ['(first_column) times 2', '(second_column) times 2'])
+
+
+def test_pipeline_features_names_suffix():
+    pipeline = make_pipeline(DummyTransf(), TransfFeatureNames(), Mult(2))
+    assert_array_equal(pipeline.get_feature_names(),
+                       ['(first_column) times 2', '(second_column) times 2'])
+
+
+def test_features_names_incorrect_pipeline():
+    pipeline = make_pipeline(TransfFeatureNames(), DummyTransf(),
+                             TransfFeatureNames(), Mult(4))
+    assert_raises(AttributeError, pipeline.get_feature_names)
+
+
+def test_features_names_incorrect_pipeline():
+    pipeline = make_pipeline(TransfFeatureNames(), TransfFeatureNames(),
+                             Mult(4))
+    assert_raises(AttributeError, pipeline.get_feature_names)

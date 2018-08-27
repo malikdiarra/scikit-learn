@@ -119,6 +119,67 @@ class Pipeline(_BaseComposition):
         self._validate_steps()
         self.memory = memory
 
+        # building get_feature_names
+        def has_get_features(step):
+            return hasattr(step, 'get_feature_names') \
+                    and callable(getattr(step, 'get_feature_names'))
+
+        def has_get_features_with_params(step):
+            return has_get_features(step) \
+                    and 'input_features' in step.get_feature_names.__code__.co_varnames
+
+        if has_get_features_with_params(self.steps[0][1]) \
+                and all([has_get_features_with_params(step_estimator) \
+                         for _, step_estimator in self.steps]):
+
+            def _get_feature_names_all(input_features):
+                feature_names = input_features
+                for step_name, step_estimator in self.steps:
+                    feature_names = step_estimator.get_feature_names(feature_names)
+                return feature_names
+
+            self._get_feature_names = _get_feature_names_all
+
+        else:
+            for position, (step_name, step) in enumerate(self.steps):
+                remaining_steps = self.steps[position+1:]
+                if has_get_features(step) \
+                        and all([has_get_features_with_params(step_estimator)
+                                 for _, step_estimator in remaining_steps]):
+                    def _get_feature_names_suffix():
+                        names = step.get_feature_names()
+                        for step_name, tail_step in remaining_steps:
+                            names = tail_step.get_feature_names(names)
+                        return names
+
+                    self._get_feature_names = _get_feature_names_suffix
+                    break
+                elif has_get_features(step):
+                    def error_get_features():
+                        raise AttributeError()
+                    self._get_feature_names = error_get_features
+                    break
+
+    @property
+    def get_feature_names(self):
+        """
+        Return feature names for output features
+
+        Parameters
+        ----------
+        input_features : list of string, length n_features, optional
+            If available, it is transformed by the get_feature_names
+            function of the pipeline.
+            If missing, the first get_feature_names in the pipeline
+            is used to seed the transformation.
+
+        Returns
+        -------
+        output_feature_names : list of string, length n_output_features
+
+        """
+        return self._get_feature_names
+
     def get_params(self, deep=True):
         """Get parameters for this estimator.
 
